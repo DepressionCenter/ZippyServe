@@ -19,7 +19,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License along
 with this program. If not, see <https://www.gnu.org/licenses/>.
 -->
-![Eisenberg Family Depression Center](https://github.com/DepressionCenter/.github/blob/main/images/EFDCLogo_375w.png "depressioncenter.org")
+![Eisenberg Family Depression Center](https://code.depressioncenter.org/images/EFDCLogo_375w.png "depressioncenter.org")
 
 
 # ZippyServe
@@ -27,7 +27,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>.
 ## Description
 ZippyServe is zero-dependency local web server. It lets you test single-page apps quickly. It serves directories, zips, HTML, and Markdown.
 
-<!-- ![Preview Image](Repo-preview.png) -->
+<!-- ![Preview Image](images/Repo-preview.png) -->
 
 ZippyServe solves local SPA testing. It requires no bulky web servers. Lightweight scripts run across operating systems. Compiled Go binary provides reliable fallback. It serves local directories or zips. It routes index files and READMEs. It blocks upward directory traversal securely. It renders GitHub-flavored Markdown natively. It launches browser to localhost automatically. All dependencies remain strictly GPLv3.
 
