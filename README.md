@@ -27,16 +27,18 @@ with this program. If not, see <https://www.gnu.org/licenses/>.
 ## Description
 ZippyServe is zero-dependency local web server. It lets you test single-page apps quickly. It serves directories, zips, HTML, and Markdown.
 
-<!-- ![Preview Image](images/Repo-preview.png) -->
+![Preview Image](images/Repo-preview.png)
 
-ZippyServe solves local SPA testing. It requires no bulky web servers. Lightweight scripts run across operating systems. Compiled Go binary provides reliable fallback. It serves local directories or zips. It routes index files and READMEs. It blocks upward directory traversal securely. It renders GitHub-flavored Markdown natively. It launches browser to localhost automatically. All dependencies remain strictly GPLv3.
+ZippyServe solves local SPA testing. It requires no bulky web servers. Precompiled binaries ship for Windows, Linux, and macOS in `/bin` — no runtime install needed. It serves local directories, zips, and tarballs. It routes index files and READMEs. It blocks upward directory traversal securely. It renders GitHub-flavored Markdown natively. It launches your browser to localhost automatically. Copy the run script and `/bin` into any project to test it locally. All dependencies remain strictly GPLv3.
 
 
 
 ## Quick Start Guide
-+ Run lightweight script matching OS (e.g., `./run-linux.sh`, `.\run-windows.ps1`).
-+ Or execute compiled Go fallback binary (`./zippyserve`).
-+ Default browser opens automatically to `http://localhost:8010`.
++ Copy `bin/` and the run script matching your OS into your project's root.
++ Run it: `.\run-windows.ps1` (Windows), `./run-linux.sh` (Linux), or double-click `run-mac.command` (macOS).
++ Your default browser opens automatically to `http://localhost:8010`.
++ Override the port or serve a different directory/zip: `.\run-windows.ps1 -Port 9000` or `./run-linux.sh --dir ./dist`.
++ Building from source instead of using the checked-in binaries: run `.\build.ps1` (Windows) or `./build.sh` (Linux/macOS) to cross-compile all targets into `/bin`.
 
 
 

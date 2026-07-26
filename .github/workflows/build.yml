@@ -1,0 +1,48 @@
+# This file is part of ZippyServe
+# .github/workflows/build.yml
+# Author(s): Gabriel Mongefranco; Eisenberg Family Depression Center.
+# Created: 2026-07-26
+# Summary: CI verification build. Cross-compiles ZippyServe for all supported
+#          targets on every push/PR to catch build breakage. Does not modify or
+#          commit anything back to the repository; publishing binaries into
+#          /bin is a manual step done locally via build.ps1/build.sh.
+# Notes: See README file for documentation and full license information.
+#
+# Copyright © 2026 The Regents of the University of Michigan
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+# You should have received a copy of the GNU General Public License along
+# with this program. If not, see <https://www.gnu.org/licenses/>.
+
+name: Build
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: src/server/go.mod
+
+      - name: Vet
+        run: go vet -C src/server ./...
+
+      - name: Cross-compile all targets
+        run: ./build.sh
