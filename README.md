@@ -81,7 +81,7 @@ Licensed under GNU General Public License v3.0.
 
 ## Citation
 >_Mongefranco, Gabriel (2026). ZippyServe. University of Michigan. Software. https://github.com/DepressionCenter/ZippyServe_  
-​​​​​​​     _DOI: [[Pending]](https://doi.org/...)_
+​​​​​​​     _DOI: [https://doi.org/10.5281/zenodo.21613944](https://doi.org/10.5281/zenodo.21613944)_
 
 
 ----
