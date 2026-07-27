@@ -25,7 +25,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>.
 # ZippyServe
 
 ## Description
-ZippyServe is zero-dependency local web server. It lets you test single-page apps quickly. It serves directories, zips, HTML, and Markdown.
+ZippyServe is a zero-dependency local web server. It lets you test single-page apps quickly. It serves directories, zips, HTML, and Markdown.
 
 ![Preview Image](images/ZippyServe.png)
 
