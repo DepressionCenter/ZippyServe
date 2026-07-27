@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 912 512" width="912" height="512">
+  <title>ZippyServe Preview - Zero-Dependency Local Web Server</title>
+  
+  <!-- Background -->
+  <rect width="100%" height="100%" fill="#1a1e23"/>
+  
+  <!-- Subtle Grid -->
+  <path d="M0 100 L912 100 M0 200 L912 200 M0 300 L912 300 M0 400 L912 400 M0 500 L912 500 M100 0 L100 512 M200 0 L200 512 M300 0 L300 512 M400 0 L400 512 M500 0 L500 512 M600 0 L600 512 M700 0 L700 512 M800 0 L800 512 M900 0 L900 512" stroke="#2a3038" stroke-width="1"/>
+  
+  <!-- Graphic: Folder + ZIP/Lightning -->
+  <g transform="translate(100, 130)">
+    <!-- Folder Back -->
+    <path d="M20,60 L140,60 L180,100 L280,100 C290,100 300,110 300,120 L300,240 C300,250 290,260 280,260 L20,260 C10,260 0,250 0,240 L0,80 C0,70 10,60 20,60 Z" fill="#2d3748"/>
+    <!-- Document inside -->
+    <rect x="40" y="40" width="220" height="180" rx="8" fill="#4a5568"/>
+    <line x1="70" y1="80" x2="230" y2="80" stroke="#a0aec0" stroke-width="8" stroke-linecap="round"/>
+    <line x1="70" y1="120" x2="200" y2="120" stroke="#a0aec0" stroke-width="8" stroke-linecap="round"/>
+    <!-- Folder Front -->
+    <path d="M0,120 L300,120 L280,260 L20,260 Z" fill="#3182ce"/>
+    <!-- Lightning Bolt / Zip Action -->
+    <path d="M150,100 L110,180 L160,180 L130,260 L200,160 L150,160 Z" fill="#ecc94b"/>
+  </g>
+
+  <!-- Typography -->
+  <text x="440" y="230" font-family="system-ui, -apple-system, sans-serif" font-size="76" font-weight="900" fill="#ffffff">ZippyServe</text>
+  <text x="445" y="285" font-family="system-ui, -apple-system, sans-serif" font-size="28" font-weight="400" fill="#a0aec0">Zero-Dependency Local Web Server</text>
+  
+  <!-- Feature Badges -->
+  <g transform="translate(445, 330)">
+    <rect x="0" y="0" width="80" height="36" rx="6" fill="#2c7a7b"/>
+    <text x="40" y="24" font-family="system-ui, sans-serif" font-size="16" font-weight="bold" fill="#fff" text-anchor="middle">.ZIP</text>
+    
+    <rect x="95" y="0" width="80" height="36" rx="6" fill="#c53030"/>
+    <text x="135" y="24" font-family="system-ui, sans-serif" font-size="16" font-weight="bold" fill="#fff" text-anchor="middle">.MD</text>
+    
+    <rect x="190" y="0" width="90" height="36" rx="6" fill="#dd6b20"/>
+    <text x="235" y="24" font-family="system-ui, sans-serif" font-size="16" font-weight="bold" fill="#fff" text-anchor="middle">.HTML</text>
+  </g>
+</svg>

@@ -27,7 +27,7 @@ with this program. If not, see <https://www.gnu.org/licenses/>.
 ## Description
 ZippyServe is zero-dependency local web server. It lets you test single-page apps quickly. It serves directories, zips, HTML, and Markdown.
 
-![Preview Image](images/Repo-preview.png)
+![Preview Image](images/ZippyServe.png)
 
 ZippyServe solves local SPA testing. It requires no bulky web servers. Precompiled binaries ship for Windows, Linux, and macOS in `/bin` — no runtime install needed. It serves local directories, zips, and tarballs. It routes index files and READMEs. It blocks upward directory traversal securely. It renders GitHub-flavored Markdown natively. It launches your browser to localhost automatically. Copy the run script and `/bin` into any project to test it locally. All dependencies remain strictly GPLv3.
 
