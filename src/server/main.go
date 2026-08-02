@@ -57,6 +57,46 @@ var (
 	tempDirsMu   sync.Mutex
 )
 
+// WebMimeTypes are explicitly registered at startup instead of trusting the host
+// OS's MIME database (Windows registry, /etc/mime.types, etc.), which can be
+// missing or wrong for common web extensions — e.g. a broken/absent Windows
+// registry entry causes Go's net/http to content-sniff .css as text/plain instead
+// of text/css. List based on MDN's "Common MIME types" reference:
+// https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/MIME_types/Common_types
+var WebMimeTypes = map[string]string{
+	".css":         "text/css; charset=utf-8",
+	".js":          "text/javascript; charset=utf-8",
+	".mjs":         "text/javascript; charset=utf-8",
+	".json":        "application/json",
+	".svg":         "image/svg+xml",
+	".ico":         "image/x-icon",
+	".woff":        "font/woff",
+	".woff2":       "font/woff2",
+	".ttf":         "font/ttf",
+	".otf":         "font/otf",
+	".eot":         "application/vnd.ms-fontobject",
+	".map":         "application/json",
+	".txt":         "text/plain; charset=utf-8",
+	".csv":         "text/csv; charset=utf-8",
+	".xml":         "application/xml",
+	".pdf":         "application/pdf",
+	".mp4":         "video/mp4",
+	".webm":        "video/webm",
+	".ogg":         "audio/ogg",
+	".mp3":         "audio/mpeg",
+	".wav":         "audio/wav",
+	".avif":        "image/avif",
+	".webp":        "image/webp",
+	".gif":         "image/gif",
+	".png":         "image/png",
+	".jpg":         "image/jpeg",
+	".jpeg":        "image/jpeg",
+	".zip":         "application/zip",
+	".gz":          "application/gzip",
+	".wasm":        "application/wasm",
+	".webmanifest": "application/manifest+json",
+}
+
 // Flags
 var (
 	portFlag       = flag.Int("port", DefaultPort, "Port to listen on")
@@ -72,10 +112,10 @@ func main() {
 	flag.Parse()
 	log.SetPrefix("[ZippyServe] ")
 
-	// Ensure MIME types are set
-	mime.AddExtensionType(".mjs", "application/javascript")
-	mime.AddExtensionType(".webmanifest", "application/manifest+json")
-	mime.AddExtensionType(".wasm", "application/wasm")
+	// Ensure common web MIME types are set explicitly (see WebMimeTypes doc above)
+	for ext, typ := range WebMimeTypes {
+		mime.AddExtensionType(ext, typ)
+	}
 
 	serveRoot, indexFile := determineServingRoot()
 	log.Printf("Starting %s v%s", ServerName, Version)
