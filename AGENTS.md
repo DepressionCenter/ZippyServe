@@ -58,7 +58,13 @@ Use the correct comment syntax for the language. Do not fabricate authors or dat
 
 ## 4. CODE COMMENT STYLE
 
-Comments must explain intent, constraints, business rules, data meaning, security decisions, or non-obvious behavior. Document “why” more often than “what.”
+Comments must explain intent, constraints, business rules, data meaning, security decisions, or non-obvious behavior. Document “why” more often than “what.” Write for a reader who has never seen this code before and may not be a programmer — explain the reasoning and assumptions behind a decision, not just what the syntax does.
+
+- **Length:** 1-2 lines max, unless documenting parameters or a quirk that genuinely needs more room to avoid a future mistake.
+- **Scope:** Comments describe the code only — never the user running the AI agent, the agent's own plans, or commentary about the coding session. Never reference internal or non-public material: AI-generated implementation plans (even when the plan explains "why," restate the relevant fact in the comment instead of pointing to it), files ignored via `.gitignore`, or files in other private locations outside the repository.
+- **No line numbers:** Never cite specific line numbers or line ranges — they go stale as soon as the file changes again.
+- **TODOs:** Any task the user wants done that isn't part of the current change (including deferred future work) gets a comment starting with `// TODO:` (or the language's equivalent comment syntax), placed as close as possible to the code it concerns.
+- **Sensitive content:** Scan every comment you write or touch for PHI/PII and secrets — real names, email addresses, phone numbers, street addresses, dates of birth, ages, API keys/tokens, real client/account IDs, passwords, and PINs (numeric, emoji, or mixed) — excluding clearly synthetic examples and the file header's author/support contact. Flag anything found to the user and report it under the Security Review section of the response format (§15) rather than quietly deleting or leaving it.
 
 Use visible section comments for major phases, matching the language’s comment syntax. Examples:
 ```
@@ -158,19 +164,37 @@ Before editing, inspect existing code to preserve established patterns. Make the
 
 ## 15. REQUIRED RESPONSE FORMAT
 
-When asked to implement or modify code, respond exactly with:
+When asked to implement or modify code, respond with only the sections below that have something to say. Omit a section entirely — heading included — rather than writing "N/A" or "No issues found." Each section is a tight bullet list, not a paragraph: state the fact, skip the lead-up.
 ```
-## Result (Brief summary of what was produced)
+## Result (1-2 sentences: what was produced)
 ## Files Changed (List each file and purpose)
 ## Implementation (Complete, ready-to-use code. NO placeholders like "existing code here")
-## Security Review (Controls implemented, risks found)
-## Accessibility Review (Work completed, tests needed)
+## Security Review (Only if the change touches auth, input handling, secrets, or PHI, or if §4's comment scan flagged something: controls added, risks found)
+## Accessibility Review (Only if the change touches a user-facing interface: work done, tests still needed)
 ## Verification (Exact commands run/outcomes, or "Not executed in this environment")
-## Documentation (Updated comments, README sections, examples)
-## Assumptions (Items that materially affect the result)
+## Documentation (Only if comments, README, or examples changed beyond the code itself)
+## Assumptions (Only if something materially affects the result)
 ```
 
-## 16. DEFINITION OF DONE
+## 16. LOCAL DEBUG SERVER (ZIPPYSERVE MCP)
+
+If the repository you're working in ships [ZippyServe](https://github.com/DepressionCenter/ZippyServe) for local testing, use it — with its built-in MCP server turned on — instead of an ad-hoc server (`python -m http.server`, `npx serve`, etc.) whenever you need to inspect a running instance of a static site or SPA.
+
+Detection order (check in this order, use the first match):
+1. A `run-windows.ps1`, `run-linux.sh`, or `run-mac.command` script at the repo root. Prefer this over the binary — it wraps the binary, defaults `-dir`/`-Dir` to the repo root, and handles the browser launch.
+2. A `/bin/ZippyServe*` binary (`ZippyServe.exe`, `ZippyServe-linux-amd64`, `ZippyServe-mac-amd64`, `ZippyServe-mac-arm64`) with no run script present. Invoke it directly.
+3. Neither present: ZippyServe is not part of this project. Do not fetch, install, or build it to satisfy this instruction.
+
+Always enable the MCP server so you can inspect the running instance directly (served files, request log, response headers, captured browser console/errors, secret scan) instead of asking the user to copy-paste output back to you:
+- Run script: `.\run-windows.ps1 -Mcp -McpBrowser` (Windows) or `./run-linux.sh --mcp --mcp-browser` / `./run-mac.command --mcp --mcp-browser` (Linux/macOS).
+- Binary directly (Go-style single-dash flags): `./bin/ZippyServe-linux-amd64 -mcp -mcp-browser -dir .`.
+- `-mcp-browser` (console/error capture) requires `-mcp` and is otherwise a no-op flag combo — passing it alone is a fatal startup error. Add it whenever you need JS console/runtime errors, not just server-side signals.
+- Connect your MCP client to the port ZippyServe prints at startup, e.g. `claude mcp add --transport http zippyserve http://127.0.0.1:8010/__mcp` (default port 8010; match whatever `-port`/`-Port` is actually in use).
+
+The MCP server is off unless `-mcp`/`-Mcp` is passed, is read-only (it cannot modify what's served or touch the filesystem), and is always bound to `127.0.0.1` — there is no setting to expose it on the network. Full flag and tool reference: [docs/mcp-design.md](docs/mcp-design.md).
+
+
+## 17. DEFINITION OF DONE
 
 Work is not complete until:
 - Code solves the requested problem securely and accessibly.
