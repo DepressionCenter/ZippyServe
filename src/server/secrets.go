@@ -108,6 +108,12 @@ func toolScanForSecrets(h *ZippyHandler, argsJSON json.RawMessage) (map[string]i
 			return err
 		}
 		if d.IsDir() {
+			if p != base && isDotExcluded(p) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if isDotExcluded(p) {
 			return nil
 		}
 		if len(findings) >= maxSecretScanResults {

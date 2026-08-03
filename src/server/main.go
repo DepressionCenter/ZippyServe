@@ -100,15 +100,16 @@ var WebMimeTypes = map[string]string{
 
 // Flags
 var (
-	portFlag       = flag.Int("port", DefaultPort, "Port to listen on")
-	dirFlag        = flag.String("dir", "", "Directory to serve")
-	zipFlag        = flag.String("zip", "", "Zip/Tar file to serve")
-	compressedFlag = flag.String("compressed", "", "Alias for --zip")
-	tarFlag        = flag.String("tar", "", "Alias for --zip")
-	gzFlag         = flag.String("gz", "", "Alias for --zip")
-	indexFlag      = flag.String("index", "", "Specific file to use as index")
-	mcpFlag        = flag.Bool("mcp", false, "Enable the built-in MCP server at "+mcpPathPrefix+" (read-only, localhost-only)")
-	mcpBrowserFlag = flag.Bool("mcp-browser", false, "Enable browser-side instrumentation (requires -mcp): injects a script into served HTML to capture console output, uncaught errors, and unhandled promise rejections, exposed via the get_console_log MCP tool")
+	portFlag          = flag.Int("port", DefaultPort, "Port to listen on")
+	dirFlag           = flag.String("dir", "", "Directory to serve")
+	zipFlag           = flag.String("zip", "", "Zip/Tar file to serve")
+	compressedFlag    = flag.String("compressed", "", "Alias for --zip")
+	tarFlag           = flag.String("tar", "", "Alias for --zip")
+	gzFlag            = flag.String("gz", "", "Alias for --zip")
+	indexFlag         = flag.String("index", "", "Specific file to use as index")
+	mcpFlag           = flag.Bool("mcp", false, "Enable the built-in MCP server at "+mcpPathPrefix+" (read-only, localhost-only)")
+	mcpBrowserFlag    = flag.Bool("mcp-browser", false, "Enable browser-side instrumentation (requires -mcp): injects a script into served HTML to capture console output, uncaught errors, and unhandled promise rejections, exposed via the get_console_log MCP tool")
+	serveDotfilesFlag = flag.Bool("serve-dotfiles", false, "Serve dotfiles and dot-directories (.git, .github, .claude, etc.) instead of excluding them by default. .well-known is always served regardless of this flag (RFC 8615)")
 )
 
 // serverStartTime is recorded once at startup for the MCP get_server_info tool's
@@ -285,6 +286,40 @@ type ZippyHandler struct {
 	RootFS *os.Root
 }
 
+// isDotExcluded reports whether relPath (a "/"-separated path relative to
+// the served root, already path.Clean-normalized by the caller) has a
+// segment starting with "." — e.g. ".git", ".github", ".claude", or a bare
+// ".env" — and should therefore be excluded from being served or inspected
+// by default. ".well-known" is always allowed (RFC 8615: well-known URIs
+// such as ACME challenges and security.txt are a real static-file-server
+// use case). -serve-dotfiles disables this check entirely.
+//
+// This is a visibility policy, not a containment boundary: os.Root (see
+// ZippyHandler.RootFS above) already prevents escaping the served root
+// regardless of this check. isDotExcluded exists because the served root is
+// commonly a project's working directory, which routinely holds VCS/tool
+// metadata (.git, .github, .claude, and similar) that was never meant to be
+// reachable over HTTP or readable by an MCP client. It is the single choke
+// point for this policy: ServeHTTP below applies it to plain file/directory
+// serving (which simulate_request/inspect_response_headers inherit
+// in-process via runInternalRequest in simulate.go), and resolveServedPath
+// (mcp.go) plus each MCP tool's fs.WalkDir callback apply it to MCP tools
+// that touch the filesystem directly instead of going through ServeHTTP.
+func isDotExcluded(relPath string) bool {
+	if *serveDotfilesFlag {
+		return false
+	}
+	for _, seg := range strings.Split(relPath, "/") {
+		if seg == "" || seg == "." || seg == ".well-known" {
+			continue
+		}
+		if strings.HasPrefix(seg, ".") {
+			return true
+		}
+	}
+	return false
+}
+
 func (h *ZippyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	sr := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
@@ -342,6 +377,10 @@ func (h *ZippyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.Contains(relPath, "\x00") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+	if isDotExcluded(relPath) {
+		http.NotFound(w, r)
 		return
 	}
 

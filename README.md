@@ -35,6 +35,7 @@ ZippyServe is a zero-dependency local web server. It lets you test single-page a
 + Serves local directories, zips, and tarballs.
 + Routes index files and READMEs automatically.
 + Blocks upward directory traversal securely.
++ Excludes dotfiles and dot-directories (`.git`, `.github`, `.claude`, etc.) from being served by default, since the served root is commonly a project's working directory — pass `-serve-dotfiles` to opt back in. `.well-known` is always served (RFC 8615).
 + Renders GitHub-flavored Markdown natively.
 + Launches your browser to `localhost` automatically.
 + Includes a built-in MCP server so AI coding agents can drive and inspect a live local server directly — see [docs/mcp-design.md](docs/mcp-design.md).
@@ -50,6 +51,7 @@ ZippyServe is a zero-dependency local web server. It lets you test single-page a
 + Override the port or serve a different directory/zip: `.\run-windows.ps1 -Port 9000` or `./run-linux.sh --dir ./dist`.
 + Building from source instead of using the checked-in binaries: run `.\build.ps1` (Windows) or `./build.sh` (Linux/macOS) to cross-compile all targets into `/bin`.
 + To use the built-in MCP server for AI coding agents, run the scripts with the `-mcp` parameter (and optionally `-mcp-browser` for console error capture). See [docs/mcp-design.md](docs/mcp-design.md) for more information.
++ Dotfiles and dot-directories (`.git`, `.github`, `.claude`, and similar) are excluded from serving by default — this applies to plain file serving as well as the MCP tools, not just one or the other. Pass `-serve-dotfiles` (or `-ServeDotfiles` on Windows) if you genuinely need to serve one: `.\run-windows.ps1 -ServeDotfiles` or `./run-linux.sh --serve-dotfiles`. `.well-known/` is always served, dotfile exclusion or not.
 
 
 

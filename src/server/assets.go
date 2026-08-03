@@ -86,6 +86,12 @@ func toolGetAssetMetrics(h *ZippyHandler, argsJSON json.RawMessage) (map[string]
 				return err
 			}
 			if d.IsDir() {
+				if p != base && isDotExcluded(p) {
+					return fs.SkipDir
+				}
+				return nil
+			}
+			if isDotExcluded(p) {
 				return nil
 			}
 			if len(files) >= maxAssetMetricsResults {

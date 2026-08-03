@@ -48,6 +48,7 @@ while [ $# -gt 0 ]; do
         --index)        SERVER_ARGS+=("-index" "$2"); shift ;;
         --mcp)          SERVER_ARGS+=("-mcp") ;;
         --mcp-browser)  SERVER_ARGS+=("-mcp-browser") ;;
+        --serve-dotfiles) SERVER_ARGS+=("-serve-dotfiles") ;;
         *)              echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
     shift

@@ -434,6 +434,7 @@ func handleToolCall(h *ZippyHandler, params json.RawMessage) (map[string]interfa
 var (
 	errInvalidToolParams = simpleError("invalid tool arguments")
 	errUnknownTool       = simpleError("unknown tool")
+	errDotfileExcluded   = simpleError("path is excluded by default (dotfile or dot-directory); restart the server with -serve-dotfiles to allow access")
 )
 
 type simpleError string
@@ -468,6 +469,9 @@ func resolveServedPath(h *ZippyHandler, relPath string) (string, error) {
 	if clean == "" {
 		clean = "."
 	}
+	if isDotExcluded(clean) {
+		return "", errDotfileExcluded
+	}
 	return clean, nil
 }
 
@@ -499,6 +503,12 @@ func toolListFiles(h *ZippyHandler, argsJSON json.RawMessage) (map[string]interf
 			return err
 		}
 		if d.IsDir() {
+			if p != base && isDotExcluded(p) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if isDotExcluded(p) {
 			return nil
 		}
 		if len(entries) >= maxListFilesResults {

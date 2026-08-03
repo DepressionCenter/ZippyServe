@@ -27,7 +27,8 @@ param(
     [string]$Gz = "",
     [string]$Index = "",
     [switch]$Mcp,
-    [switch]$McpBrowser
+    [switch]$McpBrowser,
+    [switch]$ServeDotfiles
 )
 
 $ExePath = Join-Path $PSScriptRoot "bin\ZippyServe.exe"
@@ -50,6 +51,7 @@ if ($Gz -ne "")          { $ServerArgs += @("-gz", $Gz) }
 if ($Index -ne "")       { $ServerArgs += @("-index", $Index) }
 if ($Mcp)                { $ServerArgs += @("-mcp") }
 if ($McpBrowser)         { $ServerArgs += @("-mcp-browser") }
+if ($ServeDotfiles)      { $ServerArgs += @("-serve-dotfiles") }
 
 Start-Process "http://localhost:$Port"
 

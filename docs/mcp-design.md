@@ -28,7 +28,7 @@ Licensed under GNU Free Documentation License v1.3 or later.
 # ZippyServe: Built-in MCP server user guide
 
 ## Summary
-ZippyServe is a static file server. On top of that, it can optionally run a built-in server that speaks [MCP](https://modelcontextprotocol.io/) (Model Context Protocol), the standard AI coding agents (Claude Code, Cursor, etc.) use to call tools. When enabled, an agent can inspect a *running* ZippyServe instance directly — see what files it's serving, read the recent request log, pull captured browser console errors, check response headers, scan for accidentally-committed secrets, and more — without a browser extension and without you manually copy-pasting output back and forth.
+ZippyServe is a static file server. On top of that, it can optionally run a built-in server that speaks [MCP](https://modelcontextprotocol.io/) (Model Context Protocol), the standard AI coding agents (Claude Code, Cursor, Codex, Kimi Code, etc.) use to call tools. When enabled, an agent can inspect a *running* ZippyServe instance directly — see what files it's serving, read the recent request log, pull captured browser console errors, check response headers, scan for accidentally-committed secrets, and more — without a browser extension and without you manually copy-pasting output back and forth.
 
 It ships disabled. Nothing about it changes how ZippyServe serves files unless you turn it on.
 
@@ -45,7 +45,7 @@ Pass these directly to the binary, or to any of the launch scripts:
 ./run-linux.sh --mcp --mcp-browser
 ./run-mac.command --mcp --mcp-browser
 ```
-(ZippyServe's other flags — `-port`, `-dir`, `-zip`, `-index`, etc. — are unrelated to MCP and covered in the main README.)
+(ZippyServe's other flags — `-port`, `-dir`, `-zip`, `-index`, `-serve-dotfiles`, etc. — are unrelated to MCP and covered in the main README. `-serve-dotfiles` in particular is not an MCP setting: it controls plain file serving too, and every MCP tool that touches the served filesystem follows the same default.)
 
 ## Connecting an MCP client
 ZippyServe does **not** get spawned by your agent/MCP client, and it doesn't spawn one either — it's an ordinary long-running local HTTP server that you start once (e.g. via `run-windows.ps1`) and keep running while you iterate. There's no auto-discovery: no `.well-known` manifest, no registration file, nothing broadcast on the network. Your MCP client has to be pointed at it by URL, the same way it would attach to any remote MCP server:
@@ -93,7 +93,7 @@ All ten tools are read-only — none of them can change what ZippyServe serves, 
 
 ### Gotchas, per tool
 - **`get_server_info`** returns the serving root as an **absolute filesystem path**. Harmless on a localhost-only tool, but worth knowing if you're screen-sharing.
-- **`list_files`** is a flat list, not a tree. Capped at 500 entries; past that, `truncated: true` is set and results are cut off rather than paginated.
+- **`list_files`** is a flat list, not a tree. Capped at 500 entries; past that, `truncated: true` is set and results are cut off rather than paginated. Like plain file serving, dotfiles and dot-directories (`.git`, `.github`, `.claude`, etc.) are excluded by default, except `.well-known` — see [README.md](../README.md) and pass `-serve-dotfiles` at server startup to include them.
 - **`get_recent_requests`** reads from a 200-entry ring buffer that resets on restart — it's not a persistent log. `limit` (default 50, max 200) is the only filter; there's no filtering by status code or path prefix.
 - **`get_console_log`** errors out (rather than returning empty) if `-mcp-browser` wasn't passed at startup. It only sees pages loaded/reloaded *after* the instrumentation script was actually injected — anything already open in a browser tab before you enabled `-mcp-browser` won't be captured until reloaded. Buffer is 500 entries, also reset on restart.
 - **`read_served_file`** refuses files over 10 MB and anything that isn't valid UTF-8 text — it will not truncate or garble a binary file, it just errors.
@@ -101,7 +101,7 @@ All ten tools are read-only — none of them can change what ZippyServe serves, 
 - **`validate_source_maps`** only checks structure (valid JSON, required fields present, a plausibly-matching source file exists) — it does **not** decode the map's `mappings` data to confirm positions actually line up.
 - **`simulate_request`** only supports `GET`/`HEAD`, can't target `/__mcp` itself, and previews at most 64 KB of the response body.
 - **`inspect_response_headers`** filter values are `cache`, `cors`, `security`, `cookies`, `encoding`, or omit it for everything.
-- **`scan_for_secrets`** is a small, hand-picked set of regex rules — it is **not** an exhaustive secret scanner, and a clean result is not proof nothing's leaked. Results are fully redacted (file/line/rule only — the matched text itself is never returned, logged, or otherwise surfaced), capped at 200 matches, and skip files over 2 MB or with a known binary/media extension.
+- **`scan_for_secrets`** is a small, hand-picked set of regex rules — it is **not** an exhaustive secret scanner, and a clean result is not proof nothing's leaked. Results are fully redacted (file/line/rule only — the matched text itself is never returned, logged, or otherwise surfaced), capped at 200 matches, and skip files over 2 MB or with a known binary/media extension. Does not descend into dotfiles/dot-directories by default (see `list_files` above), so it won't scan `.git` history for secrets that were later removed from the working tree — that's outside this tool's scope regardless.
 
 ## Browser instrumentation
 This is what `-mcp-browser` turns on: a small script gets injected into every HTML/Markdown page ZippyServe serves, which reports back to the server so `get_console_log` has something to return.
@@ -119,6 +119,7 @@ This is what `-mcp-browser` turns on: a small script gets injected into every HT
 - **Off by default, and always localhost-only.** There is no flag or configuration to bind the MCP endpoint (or ZippyServe itself) to a network interface. If you need an agent running elsewhere (a container, a VM) to reach it, run the agent in the same network namespace and connect via `localhost` — don't expose the port.
 - **Strictly read-only.** No tool can change served content, server configuration, or anything on disk.
 - **Can't escape the served folder.** Every tool that takes a `path` argument, and plain file serving itself, is contained to the served root by Go's `os.Root` API — even through a symlink or (on Windows) a junction placed inside the tree that points elsewhere. **Gotcha:** on Windows, this containment is strict enough that a directory junction *inside* the served root pointing at another location that's also inside the root is still blocked — junctions are rejected outright, not evaluated by where they actually point.
+- **Dotfiles and dot-directories are excluded by default**, for plain HTTP serving and every MCP tool alike — not a containment control (`os.Root` above is what actually prevents escape), but a visibility default: the served root is commonly a project's working directory, and `.git`, `.github`, `.claude`, and similar tool-config directories were never meant to be reachable this way. `.well-known` (RFC 8615) is always served regardless. Pass `-serve-dotfiles` at startup to disable this and serve everything.
 - **Can't be used for SSRF.** `simulate_request` and `inspect_response_headers` run entirely in-process against ZippyServe's own request handling — never a real network dial — so their `path` argument can't be turned into an outbound connection no matter what it contains.
 - **A malicious webpage can't read your tools' output through your browser.** `POST /__mcp` checks the `Origin` header: if a browser tab sends one (which a real cross-origin `fetch()`/XHR always does), it must match this instance's own origin or the request is rejected with `403`. Legitimate non-browser MCP clients (CLI tools, curl, an agent's HTTP client) never send `Origin` at all and are unaffected.
 - **Console-log reports are also origin-checked**, more strictly: `POST /__mcp/report` requires `Origin` to be present and matching, since it's only ever called by the first-party injected script. This stops another origin's JavaScript from poisoning your console log with fabricated events.
