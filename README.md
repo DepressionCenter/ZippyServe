@@ -44,6 +44,7 @@ ZippyServe solves local SPA testing. It requires no bulky web servers. Precompil
 
 ## Documentation
 + The full documentation is available at: https://michmed.org/efdc-kb
++ Built-in MCP server design notes (prototype, opt-in via `-mcp`): [docs/mcp-design.md](docs/mcp-design.md)
 
 
 

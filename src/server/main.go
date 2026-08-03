@@ -4,9 +4,9 @@
 // Created: 2026-07-26
 // Summary: Go compiled binary serving static files securely. Main entry point.
 // Notes: See README file for documentation and full license information.
-// 
+//
 // Copyright © 2026 The Regents of the University of Michigan
-// 
+//
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
 // the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
@@ -106,11 +106,17 @@ var (
 	tarFlag        = flag.String("tar", "", "Alias for --zip")
 	gzFlag         = flag.String("gz", "", "Alias for --zip")
 	indexFlag      = flag.String("index", "", "Specific file to use as index")
+	mcpFlag        = flag.Bool("mcp", false, "Enable the built-in MCP server at "+mcpPathPrefix+" (read-only, localhost-only)")
 )
+
+// serverStartTime is recorded once at startup for the MCP get_server_info tool's
+// uptime field.
+var serverStartTime time.Time
 
 func main() {
 	flag.Parse()
 	log.SetPrefix("[ZippyServe] ")
+	serverStartTime = time.Now()
 
 	// Ensure common web MIME types are set explicitly (see WebMimeTypes doc above)
 	for ext, typ := range WebMimeTypes {
@@ -131,6 +137,9 @@ func main() {
 
 	go func() {
 		log.Printf("Listening on http://127.0.0.1:%d", *portFlag)
+		if *mcpFlag {
+			log.Printf("MCP server enabled at http://127.0.0.1:%d%s (read-only, localhost-only)", *portFlag, mcpPathPrefix)
+		}
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server error: %v", err)
 		}
@@ -215,8 +224,11 @@ type ZippyHandler struct {
 
 func (h *ZippyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
+	sr := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+	w = sr
 	defer func() {
-		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start))
+		recordRequest(requestLogEntry{Method: r.Method, Path: r.URL.Path, Status: sr.status, DurationMS: float64(time.Since(start).Microseconds()) / 1000, Time: start})
+		log.Printf("%s %s %d %s", r.Method, r.URL.Path, sr.status, time.Since(start))
 	}()
 
 	// Security headers. REST/WebWorkers/HTMX supported by design.
@@ -225,6 +237,17 @@ func (h *ZippyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Service-Worker-Allowed", "/")
+
+	// Reserved MCP endpoint. Always intercepted here so a served file can never
+	// shadow or be shadowed by it, regardless of whether -mcp is enabled.
+	if strings.HasPrefix(r.URL.Path, mcpPathPrefix) {
+		if !*mcpFlag {
+			http.NotFound(w, r)
+			return
+		}
+		handleMCPRequest(w, r, h)
+		return
+	}
 
 	// Sanitize path
 	cleanPath := filepath.Clean(r.URL.Path)
@@ -320,7 +343,7 @@ func (h *ZippyHandler) serveFile(w http.ResponseWriter, r *http.Request, filePat
 // Markdown Parser Engine
 func renderMarkdown(md []byte) []byte {
 	str := string(md)
-	
+
 	// Pre-process code blocks to avoid rendering inside them
 	codeBlockRegex := regexp.MustCompile("(?s)```(.*?)```")
 	codeBlocks := []string{}
@@ -339,7 +362,7 @@ func renderMarkdown(md []byte) []byte {
 		codeBlocks = append(codeBlocks, fmt.Sprintf("<pre><code class=\"language-%s\">%s</code></pre>", html.EscapeString(lang), html.EscapeString(code)))
 		return fmt.Sprintf("%%CODEBLOCK_%d%%", len(codeBlocks)-1)
 	})
-	
+
 	// @mentions
 	mentionRegex := regexp.MustCompile(`(^|\s)@([a-zA-Z0-9_-]+)`)
 	str = mentionRegex.ReplaceAllString(str, `$1<a href="https://github.com/$2"><img src="https://github.com/$2.png?size=20" width="20" height="20" alt="@$2" onerror="this.style.display='none'"> @$2</a>`)
@@ -358,7 +381,7 @@ func renderMarkdown(md []byte) []byte {
 	str = regexp.MustCompile(`\*(.*?)\*`).ReplaceAllString(str, "<em>$1</em>")
 	str = regexp.MustCompile(`_(.*?)_`).ReplaceAllString(str, "<em>$1</em>")
 	str = regexp.MustCompile(`~~(.*?)~~`).ReplaceAllString(str, "<del>$1</del>")
-	
+
 	// Inline Code
 	str = regexp.MustCompile("`(.*?)`").ReplaceAllStringFunc(str, func(m string) string {
 		inner := m[1 : len(m)-1]
@@ -410,7 +433,7 @@ blockquote { border-left: .25em solid #d0d7de; padding: 0 1em; color: #57606a; m
 	htmlFooter := `
 </body>
 </html>`
-	
+
 	return []byte(htmlHeader + str + htmlFooter)
 }
 
@@ -420,7 +443,7 @@ func extractArchive(src string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	tempDirsMu.Lock()
 	tempDirs = append(tempDirs, tmpDir)
 	tempDirsMu.Unlock()
@@ -487,7 +510,7 @@ func validateAndExtract(name string, dest string, info fs.FileInfo, openFunc fun
 	if strings.Contains(cleanName, "..") || strings.Contains(cleanName, "\x00") {
 		return fmt.Errorf("invalid path inside archive: %s", name)
 	}
-	
+
 	target := filepath.Join(dest, cleanName)
 	if !strings.HasPrefix(target, filepath.Clean(dest)+string(os.PathSeparator)) {
 		return fmt.Errorf("illegal file path: %s", target)
