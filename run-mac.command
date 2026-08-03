@@ -53,6 +53,8 @@ while [ $# -gt 0 ]; do
         --gz)           SERVER_ARGS+=("-gz" "$2"); shift ;;
         --index=*)      SERVER_ARGS+=("-index" "${1#*=}") ;;
         --index)        SERVER_ARGS+=("-index" "$2"); shift ;;
+        --mcp)          SERVER_ARGS+=("-mcp") ;;
+        --mcp-browser)  SERVER_ARGS+=("-mcp-browser") ;;
         *)              echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
     shift

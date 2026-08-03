@@ -4,9 +4,9 @@
 // Created: 2026-08-02
 // Summary: Optional built-in MCP (Model Context Protocol) server, enabled with
 //          -mcp, that exposes read-only tools so AI coding agents can inspect a
-//          running ZippyServe instance (server info, served files, recent request
-//          log) without a browser plug-in. Prototype scope only — see
-//          docs/mcp-design.md for the full design and deferred future work.
+//          running ZippyServe instance (server info, served files, recent
+//          request log, asset analysis, secret scanning, and more) without a
+//          browser plug-in. See docs/mcp-design.md for the full design.
 // Notes: See README file for documentation and full license information.
 //
 // Copyright © 2026 The Regents of the University of Michigan

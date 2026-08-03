@@ -25,7 +25,9 @@ param(
     [string]$Compressed = "",
     [string]$Tar = "",
     [string]$Gz = "",
-    [string]$Index = ""
+    [string]$Index = "",
+    [switch]$Mcp,
+    [switch]$McpBrowser
 )
 
 $ExePath = Join-Path $PSScriptRoot "bin\ZippyServe.exe"
@@ -46,6 +48,8 @@ if ($Compressed -ne "") { $ServerArgs += @("-compressed", $Compressed) }
 if ($Tar -ne "")         { $ServerArgs += @("-tar", $Tar) }
 if ($Gz -ne "")          { $ServerArgs += @("-gz", $Gz) }
 if ($Index -ne "")       { $ServerArgs += @("-index", $Index) }
+if ($Mcp)                { $ServerArgs += @("-mcp") }
+if ($McpBrowser)         { $ServerArgs += @("-mcp-browser") }
 
 Start-Process "http://localhost:$Port"
 

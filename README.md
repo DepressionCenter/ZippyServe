@@ -3,8 +3,8 @@ This file is part of ZippyServe
 README.md
 Author(s): Gabriel Mongefranco.
 Created: 2026-07-26
-Last Modified: 2026-08-02
-Summary: Provides an overview of the project, in Markdown format.
+Last Modified: 2026-08-03
+Summary: ZippyServe is a zero-dependency local web server. This file provides an overview of the project, in Markdown format.
 Notes: See README file for documentation and full license information.
 
 Copyright © 2026 The Regents of the University of Michigan
@@ -44,7 +44,7 @@ ZippyServe solves local SPA testing. It requires no bulky web servers. Precompil
 
 ## Documentation
 + The full documentation is available at: https://michmed.org/efdc-kb
-+ Built-in MCP server design notes — ten read-only tools, opt-in via `-mcp`, with optional browser console/error capture via `-mcp-browser`: [docs/mcp-design.md](docs/mcp-design.md)
++ For the built-in MCP server for AI coding agents, opt-in with the `-mcp` parameter. Optional browser console/error capture is available via `-mcp-browser`. See [docs/mcp-design.md](docs/mcp-design.md).
 
 
 
