@@ -198,6 +198,98 @@ var mcpTools = []mcpTool{
 			},
 		},
 	},
+	{
+		Name:        "read_served_file",
+		Description: "Read the raw text content of a single file under the served root (max 10 MB, UTF-8 text only).",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"path": map[string]interface{}{
+					"type":        "string",
+					"description": "Path of the file to read, relative to the served root.",
+				},
+			},
+			"required": []string{"path"},
+		},
+	},
+	{
+		Name:        "get_asset_metrics",
+		Description: "Get raw size, in-memory gzip size, and compression ratio for a served file or every file under a served directory. Does not report brotli size (Go's standard library has no brotli encoder).",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"path": map[string]interface{}{
+					"type":        "string",
+					"description": "File or subdirectory of the served root to analyze. Defaults to the root itself.",
+				},
+			},
+		},
+	},
+	{
+		Name:        "validate_source_maps",
+		Description: "Validate a source map (.map file: structurally valid JSON with version/sources/mappings) or a .js/.css file's sourceMappingURL comment and the map it references.",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"path": map[string]interface{}{
+					"type":        "string",
+					"description": "Path (relative to the served root) of a .map file, or a .js/.css file whose source map should be checked.",
+				},
+			},
+			"required": []string{"path"},
+		},
+	},
+	{
+		Name:        "simulate_request",
+		Description: "Evaluate routing, status code, headers, and a body preview for a path by invoking this server's own request handling in-process (no real network call). GET/HEAD only; cannot target /__mcp.",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"path": map[string]interface{}{
+					"type":        "string",
+					"description": "Relative request path to simulate, e.g. \"/index.html\".",
+				},
+				"method": map[string]interface{}{
+					"type":        "string",
+					"enum":        []string{"GET", "HEAD"},
+					"description": "HTTP method to simulate. Defaults to GET.",
+				},
+			},
+			"required": []string{"path"},
+		},
+	},
+	{
+		Name:        "inspect_response_headers",
+		Description: "Get the response headers ZippyServe would send for a path, optionally filtered to one category.",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"path": map[string]interface{}{
+					"type":        "string",
+					"description": "Relative request path to inspect, e.g. \"/index.html\".",
+				},
+				"filter": map[string]interface{}{
+					"type":        "string",
+					"enum":        []string{"all", "cache", "cors", "security", "cookies", "encoding"},
+					"description": "Header category to return. Defaults to all.",
+				},
+			},
+			"required": []string{"path"},
+		},
+	},
+	{
+		Name:        "scan_for_secrets",
+		Description: "Heuristically scan served text files for patterns resembling common credentials (AWS keys, private key headers, GitHub/Slack tokens, generic secret assignments). Best-effort scan, not a compliance control; output is fully redacted (file/line/rule only, never the matched text).",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"path": map[string]interface{}{
+					"type":        "string",
+					"description": "Subdirectory of the served root to scan. Defaults to the root itself.",
+				},
+			},
+		},
+	},
 }
 
 // handleMCPRequest is the HTTP entry point for the built-in MCP server, mounted
@@ -288,6 +380,18 @@ func handleToolCall(h *ZippyHandler, params json.RawMessage) (map[string]interfa
 		payload, err = toolGetRecentRequests(call.Arguments)
 	case "get_console_log":
 		payload, err = toolGetConsoleLog(call.Arguments)
+	case "read_served_file":
+		payload, err = toolReadServedFile(h, call.Arguments)
+	case "get_asset_metrics":
+		payload, err = toolGetAssetMetrics(h, call.Arguments)
+	case "validate_source_maps":
+		payload, err = toolValidateSourceMaps(h, call.Arguments)
+	case "simulate_request":
+		payload, err = toolSimulateRequest(h, call.Arguments)
+	case "inspect_response_headers":
+		payload, err = toolInspectResponseHeaders(h, call.Arguments)
+	case "scan_for_secrets":
+		payload, err = toolScanForSecrets(h, call.Arguments)
 	default:
 		return nil, errUnknownTool
 	}
@@ -324,6 +428,25 @@ func toolGetServerInfo(h *ZippyHandler) map[string]interface{} {
 	}
 }
 
+// resolveServedPath validates relPath (as supplied by an MCP tool argument)
+// against the same traversal guard used by file serving (main.go's
+// ServeHTTP): reject ".." / NUL, and verify the resolved path stays inside
+// h.Root. Shared by every tool that takes a path argument (list_files,
+// read_served_file, get_asset_metrics, validate_source_maps,
+// scan_for_secrets) so there is exactly one vetted implementation of this
+// check instead of several hand-copied ones.
+func resolveServedPath(h *ZippyHandler, relPath string) (string, error) {
+	cleanRel := filepath.Clean("/" + relPath)
+	if strings.Contains(cleanRel, "..") || strings.Contains(cleanRel, "\x00") {
+		return "", errInvalidToolParams
+	}
+	base := filepath.Clean(filepath.Join(h.Root, cleanRel))
+	if !strings.HasPrefix(base, filepath.Clean(h.Root)) {
+		return "", errInvalidToolParams
+	}
+	return base, nil
+}
+
 func toolListFiles(h *ZippyHandler, argsJSON json.RawMessage) (map[string]interface{}, error) {
 	var args struct {
 		Path string `json:"path"`
@@ -334,15 +457,9 @@ func toolListFiles(h *ZippyHandler, argsJSON json.RawMessage) (map[string]interf
 		}
 	}
 
-	// Reuse the same traversal guard as file serving: reject ".." / NUL, and
-	// verify the resolved path stays inside the served root.
-	cleanRel := filepath.Clean("/" + args.Path)
-	if strings.Contains(cleanRel, "..") || strings.Contains(cleanRel, "\x00") {
-		return nil, errInvalidToolParams
-	}
-	base := filepath.Clean(filepath.Join(h.Root, cleanRel))
-	if !strings.HasPrefix(base, filepath.Clean(h.Root)) {
-		return nil, errInvalidToolParams
+	base, err := resolveServedPath(h, args.Path)
+	if err != nil {
+		return nil, err
 	}
 
 	type fileEntry struct {
