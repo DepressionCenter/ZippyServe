@@ -25,11 +25,21 @@ with this program. If not, see <https://www.gnu.org/licenses/>.
 # ZippyServe
 
 ## Description
-ZippyServe is a zero-dependency local web server. It lets you test single-page apps quickly. It serves directories, zips, HTML, and Markdown.
+ZippyServe is a zero-dependency local web server. It lets you test single-page apps quickly. It serves directories, zips, HTML, and Markdown, and it has a built-in MCP for AI coding agents.
 
 ![Preview Image](images/ZippyServe.png)
 
-ZippyServe solves local SPA testing. It requires no bulky web servers. Precompiled binaries ship for Windows, Linux, and macOS in `/bin` — no runtime install needed. It serves local directories, zips, and tarballs. It routes index files and READMEs. It blocks upward directory traversal securely. It renders GitHub-flavored Markdown natively. It launches your browser to localhost automatically. Copy the run script and `/bin` into any project to test it locally. Unlike similar web servers, ZippyServe is licensed under the GPLv3 open source license, allowing re-use and bundling with many other open source or commercial projects.
+## Features
++ Solves local SPA testing with no bulky web servers required.
++ Precompiled binaries ship for Windows, Linux, and macOS in `/bin` — no runtime install needed.
++ Serves local directories, zips, and tarballs.
++ Routes index files and READMEs automatically.
++ Blocks upward directory traversal securely.
++ Renders GitHub-flavored Markdown natively.
++ Launches your browser to `localhost` automatically.
++ Includes a built-in MCP server so AI coding agents can drive and inspect a live local server directly — see [docs/mcp-design.md](docs/mcp-design.md).
++ Adds to any project by copying just `/bin` and the run script matching your OS — no other files required.
++ Licensed under GPLv3, unlike many similar web servers, allowing re-use and bundling with other open source or commercial projects.
 
 
 
@@ -39,12 +49,12 @@ ZippyServe solves local SPA testing. It requires no bulky web servers. Precompil
 + Your default browser opens automatically to `http://localhost:8010`.
 + Override the port or serve a different directory/zip: `.\run-windows.ps1 -Port 9000` or `./run-linux.sh --dir ./dist`.
 + Building from source instead of using the checked-in binaries: run `.\build.ps1` (Windows) or `./build.sh` (Linux/macOS) to cross-compile all targets into `/bin`.
++ To use the built-in MCP server for AI coding agents, run the scripts with the `-mcp` parameter (and optionally `-mcp-browser` for console error capture). See [docs/mcp-design.md](docs/mcp-design.md) for more information.
 
 
 
 ## Documentation
 + The full documentation is available at: https://michmed.org/efdc-kb
-+ For the built-in MCP server for AI coding agents, opt-in with the `-mcp` parameter. Optional browser console/error capture is available via `-mcp-browser`. See [docs/mcp-design.md](docs/mcp-design.md).
 
 
 

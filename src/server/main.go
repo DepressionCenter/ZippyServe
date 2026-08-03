@@ -35,6 +35,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -136,15 +137,37 @@ func main() {
 		log.Printf("Index file: %s", indexFile)
 	}
 
+	// rootFS is opened once at startup and is what actually enforces the
+	// served-root boundary (see ZippyHandler.RootFS doc comment below) — the
+	// server cannot serve anything without it, so a failure here is fatal
+	// rather than a soft-degrade.
+	rootFS, err := os.OpenRoot(serveRoot)
+	if err != nil {
+		log.Fatalf("Could not open serving root %q: %v", serveRoot, err)
+	}
+
+	handler := &ZippyHandler{Root: serveRoot, Index: indexFile, RootFS: rootFS}
 	server := &http.Server{
 		Addr:    fmt.Sprintf("127.0.0.1:%d", *portFlag),
-		Handler: &ZippyHandler{Root: serveRoot, Index: indexFile},
+		Handler: handler,
 	}
 
 	go func() {
 		log.Printf("Listening on http://127.0.0.1:%d", *portFlag)
 		if *mcpFlag {
-			log.Printf("MCP server enabled at http://127.0.0.1:%d%s (read-only, localhost-only)", *portFlag, mcpPathPrefix)
+			mcpURL := fmt.Sprintf("http://127.0.0.1:%d%s", *portFlag, mcpPathPrefix)
+			log.Printf("MCP server enabled at %s (read-only, localhost-only)", mcpURL)
+			// No auto-discovery mechanism exists (no .well-known manifest, no
+			// registration file) — an agent/MCP client must be pointed at
+			// mcpURL explicitly. Printing the exact command plus a
+			// copy-pasteable agent prompt here, once, avoids tripling this
+			// guidance across run-windows.ps1/run-linux.sh/run-mac.command,
+			// which don't know the resolved port at doc-writing time anyway.
+			log.Printf("To connect Claude Code: claude mcp add --transport http zippyserve %s", mcpURL)
+			log.Printf("Or paste this prompt into your AI coding agent:")
+			log.Printf("  A ZippyServe dev server is running with its MCP server at %s . ", mcpURL)
+			log.Printf("  Connect to it and use its tools (list_files, get_recent_requests, ")
+			log.Printf("  read_served_file, scan_for_secrets, etc.) to inspect what it's serving.")
 		}
 		if *mcpBrowserFlag {
 			log.Printf("Browser instrumentation enabled: injecting %s into served HTML", mcpInjectScriptPath)
@@ -166,6 +189,9 @@ func main() {
 		log.Printf("Shutdown error: %v", err)
 	}
 
+	if err := handler.RootFS.Close(); err != nil {
+		log.Printf("Error closing serving root: %v", err)
+	}
 	cleanupTempDirs()
 }
 
@@ -227,8 +253,36 @@ func determineServingRoot() (string, string) {
 
 // ZippyHandler handles HTTP requests
 type ZippyHandler struct {
+	// Root is the original, as-configured serving root path — kept only for
+	// display (get_server_info, startup logging) and as the base directory
+	// for the (separate, ZippyServe-owned) archive-extraction temp trees.
+	// It is never used directly to open or stat served content; RootFS is.
 	Root  string
 	Index string
+	// RootFS is an *os.Root opened once at startup (os.OpenRoot(Root)) and
+	// is what actually enforces the served-root boundary: every method on
+	// Root refuses to resolve a name that would reference a location
+	// outside the directory it was opened on, including through a symlink
+	// or Windows junction placed inside the tree — enforced by the OS at
+	// the file-open level (openat-style), not by a separate userspace
+	// check performed before the real read.
+	//
+	// This replaced a hand-rolled per-component os.Lstat walk
+	// (isWithinRealRoot) that rejected ANY reparse point unconditionally
+	// (fs.ModeSymlink or fs.ModeIrregular). That blanket rejection was
+	// broader than intended: on Windows, Go sets fs.ModeIrregular for any
+	// reparse point Go doesn't specifically recognize as a symlink,
+	// AF_UNIX socket, or dedup entry — which includes cloud-sync
+	// placeholder tags (e.g. OneDrive Files On-Demand), not just directory
+	// junctions. A served tree living under such a folder (common on a
+	// managed/redirected Windows profile) would have legitimate, harmless
+	// files rejected with a 403 as if they were escape attempts. os.Root's
+	// own Windows implementation instead checks specifically for
+	// "name surrogate" reparse tags (symlinks and mount points/junctions —
+	// the ones that actually redirect a name elsewhere), so it does not
+	// misclassify a cloud placeholder file as a traversal risk. See
+	// docs/mcp-design.md for the full incident writeup.
+	RootFS *os.Root
 }
 
 func (h *ZippyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -276,24 +330,28 @@ func (h *ZippyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Sanitize path
-	cleanPath := filepath.Clean(r.URL.Path)
-	if strings.Contains(cleanPath, "..") || strings.Contains(cleanPath, "\x00") {
+	// relPath is a Root-relative, "/"-separated path derived from the
+	// request URL. path.Clean neutralizes ".." (an absolute path can't
+	// climb above "/"), and containment beyond that is enforced by h.RootFS
+	// itself — every RootFS method refuses to resolve outside the
+	// directory it was opened on, including through an internal symlink or
+	// junction that points elsewhere (see ZippyHandler.RootFS doc comment).
+	relPath := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+	if relPath == "" {
+		relPath = "."
+	}
+	if strings.Contains(relPath, "\x00") {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
-	fullPath := filepath.Join(h.Root, cleanPath)
-	if !strings.HasPrefix(fullPath, filepath.Clean(h.Root)) {
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-
-	stat, err := os.Stat(fullPath)
+	stat, err := h.RootFS.Stat(relPath)
 	if err != nil {
-		// SPA Fallback logic
-		if !strings.Contains(filepath.Base(cleanPath), ".") {
-			h.serveIndexFallback(w, r, h.Root)
+		// Not found, or a path-escape attempt rejected by RootFS — either
+		// way there's nothing here. SPA fallback logic still applies for
+		// extensionless paths.
+		if !strings.Contains(path.Base(relPath), ".") {
+			h.serveIndexFallback(w, r)
 			return
 		}
 		http.NotFound(w, r)
@@ -301,68 +359,96 @@ func (h *ZippyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if stat.IsDir() {
-		h.serveDirectory(w, r, fullPath)
+		h.serveDirectory(w, r, relPath)
 		return
 	}
 
-	h.serveFile(w, r, fullPath)
+	h.serveFile(w, r, relPath)
 }
 
-func (h *ZippyHandler) serveDirectory(w http.ResponseWriter, r *http.Request, dirPath string) {
-	// Look for index files
+// serveDirectory looks for an index or archive file directly inside
+// relDir (a path relative to h.RootFS). Archive files found this way are
+// extracted to a fresh, ZippyServe-owned temp directory (see
+// extractArchive) and served via their own ephemeral os.Root — that temp
+// tree is a separate trust domain from the served root (its names were
+// already validated on extraction; see validateAndExtract), not a location
+// reachable through h.RootFS.
+func (h *ZippyHandler) serveDirectory(w http.ResponseWriter, r *http.Request, relDir string) {
 	for _, idx := range IndexFiles {
-		idxPath := filepath.Join(dirPath, idx)
-		if _, err := os.Stat(idxPath); err == nil {
-			h.serveFile(w, r, idxPath)
+		idxRel := path.Join(relDir, idx)
+		if info, err := h.RootFS.Stat(idxRel); err == nil && !info.IsDir() {
+			h.serveFile(w, r, idxRel)
 			return
 		}
 	}
 
-	// Look for archive files
 	for _, arc := range ArchiveFiles {
-		arcPath := filepath.Join(dirPath, arc)
-		if _, err := os.Stat(arcPath); err == nil {
-			tmpDir, err := extractArchive(arcPath)
-			if err == nil {
-				h.serveDirectory(w, r, tmpDir)
+		arcRel := path.Join(relDir, arc)
+		if info, err := h.RootFS.Stat(arcRel); err == nil && !info.IsDir() {
+			arcAbs := filepath.Join(h.Root, filepath.FromSlash(arcRel))
+			if h.serveFromExtractedArchive(w, r, arcAbs) {
 				return
 			}
-			log.Printf("Error extracting fallback archive %s: %v", arcPath, err)
 		}
 	}
 
 	http.Error(w, "Forbidden", http.StatusForbidden)
 }
 
-func (h *ZippyHandler) serveIndexFallback(w http.ResponseWriter, r *http.Request, root string) {
+// serveFromExtractedArchive extracts arcAbs (an absolute path resolved
+// through h.RootFS above) to a new temp directory, opens its own os.Root
+// scoped to that directory, and serves from it via a throwaway
+// ZippyHandler — reusing serveDirectory/serveFile/serveIndexFallback
+// unchanged, so archive-extracted content gets the same containment
+// enforcement as the served root itself. Returns false (having logged the
+// error) if extraction failed, so the caller can keep trying other
+// candidates.
+func (h *ZippyHandler) serveFromExtractedArchive(w http.ResponseWriter, r *http.Request, arcAbs string) bool {
+	tmpDir, err := extractArchive(arcAbs)
+	if err != nil {
+		log.Printf("Error extracting fallback archive %s: %v", arcAbs, err)
+		return false
+	}
+	tmpRoot, err := os.OpenRoot(tmpDir)
+	if err != nil {
+		log.Printf("Error opening extracted archive dir %s: %v", tmpDir, err)
+		return false
+	}
+	defer tmpRoot.Close()
+
+	tmpHandler := &ZippyHandler{Root: tmpDir, Index: h.Index, RootFS: tmpRoot}
+	tmpHandler.serveDirectory(w, r, ".")
+	return true
+}
+
+func (h *ZippyHandler) serveIndexFallback(w http.ResponseWriter, r *http.Request) {
 	if h.Index != "" {
-		idxPath := filepath.Join(root, h.Index)
-		if _, err := os.Stat(idxPath); err == nil {
-			h.serveFile(w, r, idxPath)
+		if info, err := h.RootFS.Stat(h.Index); err == nil && !info.IsDir() {
+			h.serveFile(w, r, h.Index)
 			return
 		}
 	}
 	for _, idx := range IndexFiles {
-		idxPath := filepath.Join(root, idx)
-		if _, err := os.Stat(idxPath); err == nil {
-			h.serveFile(w, r, idxPath)
+		if info, err := h.RootFS.Stat(idx); err == nil && !info.IsDir() {
+			h.serveFile(w, r, idx)
 			return
 		}
 	}
 	http.NotFound(w, r)
 }
 
-func (h *ZippyHandler) serveFile(w http.ResponseWriter, r *http.Request, filePath string) {
-	lowerPath := strings.ToLower(filePath)
+func (h *ZippyHandler) serveFile(w http.ResponseWriter, r *http.Request, relPath string) {
+	lower := strings.ToLower(relPath)
 
-	if strings.HasSuffix(lowerPath, ".md") {
-		data, err := os.ReadFile(filePath)
+	if strings.HasSuffix(lower, ".md") {
+		data, err := h.RootFS.ReadFile(relPath)
 		if err != nil {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 		htmlData := renderMarkdown(data)
 		if *mcpBrowserFlag {
+			warnIfCSPMightBlockInjection(r.URL.Path, htmlData)
 			htmlData = injectBrowserScript(htmlData)
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -370,23 +456,25 @@ func (h *ZippyHandler) serveFile(w http.ResponseWriter, r *http.Request, filePat
 		return
 	}
 
-	if *mcpBrowserFlag && (strings.HasSuffix(lowerPath, ".html") || strings.HasSuffix(lowerPath, ".htm")) {
-		// Manual read+inject instead of http.ServeFile, so the instrumentation
-		// script tag can be spliced into the bytes. Trade-off: loses
-		// Range/ETag/If-Modified-Since support for .html/.htm, but ONLY while
-		// -mcp-browser is on; http.ServeFile still handles everything else,
-		// and .html/.htm too when -mcp-browser is off.
-		data, err := os.ReadFile(filePath)
+	if *mcpBrowserFlag && (strings.HasSuffix(lower, ".html") || strings.HasSuffix(lower, ".htm")) {
+		// Manual read+inject instead of http.ServeFileFS, so the
+		// instrumentation script tag can be spliced into the bytes.
+		// Trade-off: loses Range/ETag/If-Modified-Since support for
+		// .html/.htm, but ONLY while -mcp-browser is on; http.ServeFileFS
+		// still handles everything else, and .html/.htm too when
+		// -mcp-browser is off.
+		data, err := h.RootFS.ReadFile(relPath)
 		if err != nil {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
+		warnIfCSPMightBlockInjection(r.URL.Path, data)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(injectBrowserScript(data))
 		return
 	}
 
-	http.ServeFile(w, r, filePath)
+	http.ServeFileFS(w, r, h.RootFS.FS(), relPath)
 }
 
 // Markdown Parser Engine

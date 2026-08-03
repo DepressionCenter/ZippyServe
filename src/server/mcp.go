@@ -26,9 +26,9 @@ package main
 import (
 	"encoding/json"
 	"io"
+	"io/fs"
 	"net/http"
-	"os"
-	"path/filepath"
+	"path"
 	"sort"
 	"strings"
 	"sync"
@@ -292,6 +292,25 @@ var mcpTools = []mcpTool{
 	},
 }
 
+// mcpOriginAllowed implements the asymmetric Origin policy for POST
+// /__mcp (see docs/mcp-design.md, Security model, for the full rationale):
+// present-and-mismatched Origin is rejected (closes the confused-deputy
+// read-back risk from a malicious browser tab — a real fetch()/XHR POST
+// always carries a real, browser-set Origin header, which can never match
+// this instance's own origin); absent Origin is allowed (the normal case
+// for legitimate non-browser MCP clients — CLI tools, an agent's own HTTP
+// client, curl, etc. — none of which send Origin by default, since it's a
+// browser concept). Contrast with reportOriginAllowed (instrument.go),
+// which requires Origin to be present because /__mcp/report is only ever
+// called by first-party browser JS.
+func mcpOriginAllowed(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	return isLocalOrigin(origin, *portFlag)
+}
+
 // handleMCPRequest is the HTTP entry point for the built-in MCP server, mounted
 // at mcpPathPrefix. It implements the minimal JSON-RPC 2.0 method set an MCP
 // client needs for a read-only, tools-only server: initialize, notifications
@@ -300,6 +319,10 @@ func handleMCPRequest(w http.ResponseWriter, r *http.Request, h *ZippyHandler) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !mcpOriginAllowed(r) {
+		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -429,22 +452,23 @@ func toolGetServerInfo(h *ZippyHandler) map[string]interface{} {
 }
 
 // resolveServedPath validates relPath (as supplied by an MCP tool argument)
-// against the same traversal guard used by file serving (main.go's
-// ServeHTTP): reject ".." / NUL, and verify the resolved path stays inside
-// h.Root. Shared by every tool that takes a path argument (list_files,
+// and normalizes it into a Root-relative, "/"-separated name suitable for
+// h.RootFS methods (Stat/Open/ReadFile) and h.RootFS.FS()-based fs.WalkDir.
+// Containment is enforced by h.RootFS itself, not by this function — see
+// ZippyHandler.RootFS's doc comment (main.go) for why that's the actual
+// guard. Shared by every tool that takes a path argument (list_files,
 // read_served_file, get_asset_metrics, validate_source_maps,
 // scan_for_secrets) so there is exactly one vetted implementation of this
-// check instead of several hand-copied ones.
+// normalization instead of several hand-copied ones.
 func resolveServedPath(h *ZippyHandler, relPath string) (string, error) {
-	cleanRel := filepath.Clean("/" + relPath)
-	if strings.Contains(cleanRel, "..") || strings.Contains(cleanRel, "\x00") {
+	clean := strings.TrimPrefix(path.Clean("/"+relPath), "/")
+	if strings.Contains(clean, "\x00") {
 		return "", errInvalidToolParams
 	}
-	base := filepath.Clean(filepath.Join(h.Root, cleanRel))
-	if !strings.HasPrefix(base, filepath.Clean(h.Root)) {
-		return "", errInvalidToolParams
+	if clean == "" {
+		clean = "."
 	}
-	return base, nil
+	return clean, nil
 }
 
 func toolListFiles(h *ZippyHandler, argsJSON json.RawMessage) (map[string]interface{}, error) {
@@ -470,7 +494,7 @@ func toolListFiles(h *ZippyHandler, argsJSON json.RawMessage) (map[string]interf
 	var entries []fileEntry
 	truncated := false
 
-	walkErr := filepath.WalkDir(base, func(p string, d os.DirEntry, err error) error {
+	walkErr := fs.WalkDir(h.RootFS.FS(), base, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -479,18 +503,14 @@ func toolListFiles(h *ZippyHandler, argsJSON json.RawMessage) (map[string]interf
 		}
 		if len(entries) >= maxListFilesResults {
 			truncated = true
-			return filepath.SkipAll
-		}
-		rel, relErr := filepath.Rel(h.Root, p)
-		if relErr != nil {
-			return relErr
+			return fs.SkipAll
 		}
 		info, infoErr := d.Info()
 		if infoErr != nil {
 			return infoErr
 		}
 		entries = append(entries, fileEntry{
-			Path:      filepath.ToSlash(rel),
+			Path:      p,
 			SizeBytes: info.Size(),
 			ModTime:   info.ModTime().UTC().Format(time.RFC3339),
 		})

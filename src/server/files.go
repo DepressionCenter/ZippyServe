@@ -23,7 +23,6 @@ package main
 
 import (
 	"encoding/json"
-	"os"
 	"unicode/utf8"
 )
 
@@ -50,12 +49,12 @@ func toolReadServedFile(h *ZippyHandler, argsJSON json.RawMessage) (map[string]i
 		return nil, errInvalidToolParams
 	}
 
-	fullPath, err := resolveServedPath(h, args.Path)
+	relPath, err := resolveServedPath(h, args.Path)
 	if err != nil {
 		return nil, err
 	}
 
-	info, statErr := os.Stat(fullPath)
+	info, statErr := h.RootFS.Stat(relPath)
 	if statErr != nil || info.IsDir() {
 		return nil, simpleError("file not found: " + args.Path)
 	}
@@ -63,7 +62,7 @@ func toolReadServedFile(h *ZippyHandler, argsJSON json.RawMessage) (map[string]i
 		return nil, errFileTooLarge
 	}
 
-	data, readErr := os.ReadFile(fullPath)
+	data, readErr := h.RootFS.ReadFile(relPath)
 	if readErr != nil {
 		return nil, simpleError("could not read file: " + readErr.Error())
 	}

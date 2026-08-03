@@ -27,9 +27,7 @@ import (
 	"compress/gzip"
 	"encoding/json"
 	"io/fs"
-	"os"
 	"path"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -76,14 +74,14 @@ func toolGetAssetMetrics(h *ZippyHandler, argsJSON json.RawMessage) (map[string]
 		return nil, err
 	}
 
-	info, statErr := os.Stat(base)
+	info, statErr := h.RootFS.Stat(base)
 	if statErr != nil {
 		return nil, simpleError("path not found: " + args.Path)
 	}
 
 	var files []string
 	if info.IsDir() {
-		walkErr := filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
+		walkErr := fs.WalkDir(h.RootFS.FS(), base, func(p string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
@@ -91,7 +89,7 @@ func toolGetAssetMetrics(h *ZippyHandler, argsJSON json.RawMessage) (map[string]
 				return nil
 			}
 			if len(files) >= maxAssetMetricsResults {
-				return filepath.SkipAll
+				return fs.SkipAll
 			}
 			files = append(files, p)
 			return nil
@@ -109,13 +107,13 @@ func toolGetAssetMetrics(h *ZippyHandler, argsJSON json.RawMessage) (map[string]
 		skippedOversize, skippedError int
 	)
 	for _, p := range files {
-		fi, statErr := os.Stat(p)
+		fi, statErr := h.RootFS.Stat(p)
 		if statErr != nil || fi.Size() > maxReadFileSize {
 			skippedOversize++
 			continue
 		}
 		start := time.Now()
-		data, readErr := os.ReadFile(p)
+		data, readErr := h.RootFS.ReadFile(p)
 		if readErr != nil {
 			skippedError++
 			continue
@@ -126,10 +124,6 @@ func toolGetAssetMetrics(h *ZippyHandler, argsJSON json.RawMessage) (map[string]
 		_ = gw.Close()
 		duration := time.Since(start)
 
-		rel, relErr := filepath.Rel(h.Root, p)
-		if relErr != nil {
-			continue
-		}
 		raw := fi.Size()
 		gz := int64(gzBuf.Len())
 		ratio := 0.0
@@ -137,7 +131,7 @@ func toolGetAssetMetrics(h *ZippyHandler, argsJSON json.RawMessage) (map[string]
 			ratio = float64(gz) / float64(raw)
 		}
 		metrics = append(metrics, assetMetric{
-			Path:              filepath.ToSlash(rel),
+			Path:              p,
 			RawSizeBytes:      raw,
 			GzipSizeBytes:     gz,
 			CompressionRatio:  ratio,
@@ -192,11 +186,11 @@ func toolValidateSourceMaps(h *ZippyHandler, argsJSON json.RawMessage) (map[stri
 }
 
 func validateSourceFileMapping(h *ZippyHandler, relPath string, isCSS bool) (map[string]interface{}, error) {
-	fullPath, err := resolveServedPath(h, relPath)
+	rootRelPath, err := resolveServedPath(h, relPath)
 	if err != nil {
 		return nil, err
 	}
-	data, readErr := os.ReadFile(fullPath)
+	data, readErr := h.RootFS.ReadFile(rootRelPath)
 	if readErr != nil {
 		return nil, simpleError("could not read file: " + readErr.Error())
 	}
@@ -223,13 +217,13 @@ func validateSourceFileMapping(h *ZippyHandler, relPath string, isCSS bool) (map
 	if strings.HasPrefix(mappingURL, "/") {
 		mapRelPath = mappingURL
 	} else {
-		mapRelPath = path.Join(path.Dir(filepath.ToSlash(relPath)), mappingURL)
+		mapRelPath = path.Join(path.Dir(relPath), mappingURL)
 	}
 	return validateMapFile(h, mapRelPath)
 }
 
 func validateMapFile(h *ZippyHandler, relPath string) (map[string]interface{}, error) {
-	fullPath, err := resolveServedPath(h, relPath)
+	rootRelPath, err := resolveServedPath(h, relPath)
 	if err != nil {
 		return map[string]interface{}{
 			"path":   relPath,
@@ -240,7 +234,7 @@ func validateMapFile(h *ZippyHandler, relPath string) (map[string]interface{}, e
 
 	issues := []string{}
 
-	data, readErr := os.ReadFile(fullPath)
+	data, readErr := h.RootFS.ReadFile(rootRelPath)
 	if readErr != nil {
 		return map[string]interface{}{
 			"path":   relPath,
@@ -267,8 +261,8 @@ func validateMapFile(h *ZippyHandler, relPath string) (map[string]interface{}, e
 	// (foo.js.map -> foo.js), when the map follows that convention.
 	if strings.HasSuffix(relPath, ".map") {
 		sourceRel := strings.TrimSuffix(relPath, ".map")
-		if sourcePath, srcErr := resolveServedPath(h, sourceRel); srcErr == nil {
-			if _, statErr := os.Stat(sourcePath); statErr != nil {
+		if rootRelSource, srcErr := resolveServedPath(h, sourceRel); srcErr == nil {
+			if _, statErr := h.RootFS.Stat(rootRelSource); statErr != nil {
 				issues = append(issues, "no corresponding source file found at "+sourceRel)
 			}
 		}

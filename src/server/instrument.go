@@ -27,6 +27,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -81,7 +82,42 @@ var (
 	consoleLogMu sync.Mutex
 
 	errBrowserInstrumentationDisabled = simpleError("browser instrumentation is disabled; restart ZippyServe with both -mcp and -mcp-browser to use get_console_log")
+
+	// cspMetaTagRegex loosely matches a page-authored
+	// <meta http-equiv="Content-Security-Policy" ...> tag, case-insensitively.
+	// It only detects presence — it does not parse directives (source
+	// lists, nonces, hashes), which is real complexity not attempted here;
+	// see warnIfCSPMightBlockInjection and docs/mcp-design.md.
+	cspMetaTagRegex = regexp.MustCompile(`(?i)<meta[^>]+http-equiv\s*=\s*["']?content-security-policy["']?[^>]*>`)
+
+	// cspWarnedPaths dedupes warnIfCSPMightBlockInjection's log line per
+	// request path, so an actively-reloaded page during development doesn't
+	// spam the log on every request.
+	cspWarnedPaths   = map[string]bool{}
+	cspWarnedPathsMu sync.Mutex
 )
+
+// warnIfCSPMightBlockInjection logs a one-time-per-path heads-up when
+// htmlBytes contains its own Content-Security-Policy meta tag, since the
+// injected instrumentation <script src="/__mcp/inject.js"> tag will be
+// silently dropped by the browser if that policy's script-src doesn't
+// allow 'self' — an undetectable-from-the-server failure mode otherwise
+// (see "Known residual risk: page CSP" in docs/mcp-design.md). This is
+// presence detection only, not directive parsing: a false "might block"
+// warning (e.g. a policy that already allows 'self') is an acceptable
+// trade-off for a dev-tool nicety that doesn't need a real CSP parser.
+func warnIfCSPMightBlockInjection(pageURL string, htmlBytes []byte) {
+	if !cspMetaTagRegex.Match(htmlBytes) {
+		return
+	}
+	cspWarnedPathsMu.Lock()
+	defer cspWarnedPathsMu.Unlock()
+	if cspWarnedPaths[pageURL] {
+		return
+	}
+	cspWarnedPaths[pageURL] = true
+	log.Printf("Warning: %s declares its own Content-Security-Policy meta tag; the injected MCP instrumentation script may be silently blocked unless script-src allows 'self'", pageURL)
+}
 
 // consoleLogEntry is both the wire shape POSTed by the injected browser
 // script to mcpReportPath and the shape returned by the get_console_log MCP
@@ -128,14 +164,31 @@ func recentConsoleLog(limit int, typeFilter string) []consoleLogEntry {
 	return result
 }
 
+// isLocalOrigin reports whether origin exactly matches this server
+// instance's local origin — http://127.0.0.1:<port> or
+// http://localhost:<port>. ZippyServe only binds 127.0.0.1 (main.go's
+// http.Server.Addr), but the shipped run scripts (run-windows.ps1,
+// run-linux.sh, run-mac.command) open the browser at
+// http://localhost:<port>, not http://127.0.0.1:<port> — both resolve to
+// the same listener, and a page loaded via either hostname sends that same
+// hostname back as Origin on a same-origin POST, so both are accepted.
+//
+// Shared by reportOriginAllowed (below) and mcpOriginAllowed (mcp.go) —
+// both need this exact-origin comparison but differ on what to do when
+// Origin is ABSENT, so that presence policy is deliberately left to each
+// caller rather than folded in here.
+func isLocalOrigin(origin string, port int) bool {
+	return origin == fmt.Sprintf("http://127.0.0.1:%d", port) ||
+		origin == fmt.Sprintf("http://localhost:%d", port)
+}
+
 // reportOriginAllowed reports whether r's Origin header matches this server
-// instance. ZippyServe only binds 127.0.0.1 (main.go's http.Server.Addr),
-// but the shipped run scripts (run-windows.ps1, run-linux.sh, run-mac.command)
-// open the browser at http://localhost:<port>, not http://127.0.0.1:<port> —
-// both resolve to the same listener, and a page loaded via either hostname
-// sends that same hostname back as Origin on a same-origin POST. Both are
-// therefore accepted; anything else (including a missing Origin header) is
-// rejected.
+// instance. Origin is required here (missing → reject) because
+// /__mcp/report is only ever called by the browser-injected first-party
+// script via a real fetch/sendBeacon, which per the Fetch spec always sends
+// Origin on a POST. Contrast with mcpOriginAllowed (mcp.go), which allows a
+// missing Origin because /__mcp is also called by non-browser MCP clients
+// that never send one.
 //
 // This check exists because ServeHTTP already sets
 // Access-Control-Allow-Origin: * on every response (main.go), and that
@@ -149,9 +202,7 @@ func reportOriginAllowed(r *http.Request) bool {
 	if origin == "" {
 		return false
 	}
-	port := *portFlag
-	return origin == fmt.Sprintf("http://127.0.0.1:%d", port) ||
-		origin == fmt.Sprintf("http://localhost:%d", port)
+	return isLocalOrigin(origin, *portFlag)
 }
 
 // handleMCPReport is the HTTP entry point for POST /__mcp/report — the

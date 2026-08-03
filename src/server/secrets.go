@@ -28,8 +28,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"io/fs"
-	"os"
-	"path/filepath"
+	"path"
 	"regexp"
 	"strings"
 )
@@ -104,7 +103,7 @@ func toolScanForSecrets(h *ZippyHandler, argsJSON json.RawMessage) (map[string]i
 	truncated := false
 	filesScanned := 0
 
-	walkErr := filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
+	walkErr := fs.WalkDir(h.RootFS.FS(), base, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -113,9 +112,9 @@ func toolScanForSecrets(h *ZippyHandler, argsJSON json.RawMessage) (map[string]i
 		}
 		if len(findings) >= maxSecretScanResults {
 			truncated = true
-			return filepath.SkipAll
+			return fs.SkipAll
 		}
-		if secretScanSkipExtensions[strings.ToLower(filepath.Ext(p))] {
+		if secretScanSkipExtensions[strings.ToLower(path.Ext(p))] {
 			return nil
 		}
 		info, infoErr := d.Info()
@@ -123,18 +122,12 @@ func toolScanForSecrets(h *ZippyHandler, argsJSON json.RawMessage) (map[string]i
 			return nil
 		}
 
-		f, openErr := os.Open(p)
+		f, openErr := h.RootFS.Open(p)
 		if openErr != nil {
 			return nil
 		}
 		defer f.Close()
 		filesScanned++
-
-		rel, relErr := filepath.Rel(h.Root, p)
-		if relErr != nil {
-			return nil
-		}
-		relSlash := filepath.ToSlash(rel)
 
 		scanner := bufio.NewScanner(f)
 		scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -144,10 +137,10 @@ func toolScanForSecrets(h *ZippyHandler, argsJSON json.RawMessage) (map[string]i
 			line := scanner.Text()
 			for _, rule := range secretRules {
 				if rule.Pattern.MatchString(line) {
-					findings = append(findings, secretFinding{File: relSlash, Line: lineNum, Rule: rule.Name})
+					findings = append(findings, secretFinding{File: p, Line: lineNum, Rule: rule.Name})
 					if len(findings) >= maxSecretScanResults {
 						truncated = true
-						return filepath.SkipAll
+						return fs.SkipAll
 					}
 				}
 			}
