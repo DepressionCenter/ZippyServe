@@ -3,7 +3,7 @@ This file is part of ZippyServe
 README.md
 Author(s): Gabriel Mongefranco.
 Created: 2026-07-26
-Last Modified: 2026-07-26
+Last Modified: 2026-08-02
 Summary: Provides an overview of the project, in Markdown format.
 Notes: See README file for documentation and full license information.
 
@@ -44,7 +44,7 @@ ZippyServe solves local SPA testing. It requires no bulky web servers. Precompil
 
 ## Documentation
 + The full documentation is available at: https://michmed.org/efdc-kb
-+ Built-in MCP server design notes (prototype, opt-in via `-mcp`): [docs/mcp-design.md](docs/mcp-design.md)
++ Built-in MCP server design notes (opt-in via `-mcp`, with optional browser instrumentation via `-mcp-browser`): [docs/mcp-design.md](docs/mcp-design.md)
 
 
 

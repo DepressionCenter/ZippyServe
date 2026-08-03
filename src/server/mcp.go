@@ -180,6 +180,24 @@ var mcpTools = []mcpTool{
 			},
 		},
 	},
+	{
+		Name:        "get_console_log",
+		Description: "Get recent browser console output, uncaught errors, and unhandled promise rejections captured from pages served by this instance. Requires -mcp-browser.",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"limit": map[string]interface{}{
+					"type":        "integer",
+					"description": "Maximum number of entries to return (default 50, max 500).",
+				},
+				"type": map[string]interface{}{
+					"type":        "string",
+					"enum":        []string{"error", "unhandledrejection", "console"},
+					"description": "Filter to only this capture category. Omit to return all types.",
+				},
+			},
+		},
+	},
 }
 
 // handleMCPRequest is the HTTP entry point for the built-in MCP server, mounted
@@ -268,6 +286,8 @@ func handleToolCall(h *ZippyHandler, params json.RawMessage) (map[string]interfa
 		payload, err = toolListFiles(h, call.Arguments)
 	case "get_recent_requests":
 		payload, err = toolGetRecentRequests(call.Arguments)
+	case "get_console_log":
+		payload, err = toolGetConsoleLog(call.Arguments)
 	default:
 		return nil, errUnknownTool
 	}

@@ -107,6 +107,7 @@ var (
 	gzFlag         = flag.String("gz", "", "Alias for --zip")
 	indexFlag      = flag.String("index", "", "Specific file to use as index")
 	mcpFlag        = flag.Bool("mcp", false, "Enable the built-in MCP server at "+mcpPathPrefix+" (read-only, localhost-only)")
+	mcpBrowserFlag = flag.Bool("mcp-browser", false, "Enable browser-side instrumentation (requires -mcp): injects a script into served HTML to capture console output, uncaught errors, and unhandled promise rejections, exposed via the get_console_log MCP tool")
 )
 
 // serverStartTime is recorded once at startup for the MCP get_server_info tool's
@@ -116,6 +117,11 @@ var serverStartTime time.Time
 func main() {
 	flag.Parse()
 	log.SetPrefix("[ZippyServe] ")
+
+	if *mcpBrowserFlag && !*mcpFlag {
+		log.Fatalf("-mcp-browser requires -mcp to also be enabled; pass both -mcp -mcp-browser")
+	}
+
 	serverStartTime = time.Now()
 
 	// Ensure common web MIME types are set explicitly (see WebMimeTypes doc above)
@@ -139,6 +145,9 @@ func main() {
 		log.Printf("Listening on http://127.0.0.1:%d", *portFlag)
 		if *mcpFlag {
 			log.Printf("MCP server enabled at http://127.0.0.1:%d%s (read-only, localhost-only)", *portFlag, mcpPathPrefix)
+		}
+		if *mcpBrowserFlag {
+			log.Printf("Browser instrumentation enabled: injecting %s into served HTML", mcpInjectScriptPath)
 		}
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Server error: %v", err)
@@ -238,14 +247,32 @@ func (h *ZippyHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Service-Worker-Allowed", "/")
 
-	// Reserved MCP endpoint. Always intercepted here so a served file can never
-	// shadow or be shadowed by it, regardless of whether -mcp is enabled.
+	// Reserved MCP endpoint and its two browser-instrumentation sub-paths.
+	// Always intercepted here so a served file can never shadow or be
+	// shadowed by them, regardless of whether -mcp/-mcp-browser are enabled.
 	if strings.HasPrefix(r.URL.Path, mcpPathPrefix) {
 		if !*mcpFlag {
 			http.NotFound(w, r)
 			return
 		}
-		handleMCPRequest(w, r, h)
+		switch r.URL.Path {
+		case mcpPathPrefix:
+			handleMCPRequest(w, r, h)
+		case mcpReportPath:
+			if !*mcpBrowserFlag {
+				http.NotFound(w, r)
+				return
+			}
+			handleMCPReport(w, r)
+		case mcpInjectScriptPath:
+			if !*mcpBrowserFlag {
+				http.NotFound(w, r)
+				return
+			}
+			handleMCPInjectScript(w, r)
+		default:
+			http.NotFound(w, r)
+		}
 		return
 	}
 
@@ -326,17 +353,39 @@ func (h *ZippyHandler) serveIndexFallback(w http.ResponseWriter, r *http.Request
 }
 
 func (h *ZippyHandler) serveFile(w http.ResponseWriter, r *http.Request, filePath string) {
-	if strings.HasSuffix(strings.ToLower(filePath), ".md") {
+	lowerPath := strings.ToLower(filePath)
+
+	if strings.HasSuffix(lowerPath, ".md") {
 		data, err := os.ReadFile(filePath)
 		if err != nil {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 		htmlData := renderMarkdown(data)
+		if *mcpBrowserFlag {
+			htmlData = injectBrowserScript(htmlData)
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(htmlData)
 		return
 	}
+
+	if *mcpBrowserFlag && (strings.HasSuffix(lowerPath, ".html") || strings.HasSuffix(lowerPath, ".htm")) {
+		// Manual read+inject instead of http.ServeFile, so the instrumentation
+		// script tag can be spliced into the bytes. Trade-off: loses
+		// Range/ETag/If-Modified-Since support for .html/.htm, but ONLY while
+		// -mcp-browser is on; http.ServeFile still handles everything else,
+		// and .html/.htm too when -mcp-browser is off.
+		data, err := os.ReadFile(filePath)
+		if err != nil {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write(injectBrowserScript(data))
+		return
+	}
+
 	http.ServeFile(w, r, filePath)
 }
 
