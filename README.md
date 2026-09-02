@@ -25,7 +25,9 @@ with this program. If not, see <https://www.gnu.org/licenses/>.
 # ZippyServe
 
 ## Description
-ZippyServe is a zero-dependency local web server. It lets you test single-page apps quickly. It serves directories, zips, HTML, and Markdown, and it has a built-in MCP for AI coding agents.
+ZippyServe is an open-source, cross-platform local web server written in Go for previewing single-page applications and static content. Download a prebuilt Windows, macOS, or Linux binary and serve a directory, ZIP or tar archive, HTML file, or Markdown file without installing a runtime or package dependencies.
+
+It routes index files and READMEs, renders GitHub-flavored Markdown, excludes dotfiles by default, blocks upward directory traversal, and includes a built-in Model Context Protocol (MCP) server for AI coding agents. ZippyServe is useful for local demos, documentation previews, and agent-assisted web development.
 
 ![Preview Image](images/ZippyServe.png)
 
