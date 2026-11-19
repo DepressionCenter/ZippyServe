@@ -31,6 +31,21 @@ It routes index files and READMEs, renders GitHub-flavored Markdown, excludes do
 
 ![Preview Image](images/ZippyServe.png)
 
+## Serve a fixed set of application files
+
+Use repeatable `-allow-file` options with `-dir` to serve only named files.
+Use forward slashes in names on all platforms.
+
+```sh
+ZippyServe -port 8010 -dir ./site -allow-file index.html -allow-file app.js
+```
+
+Open `http://127.0.0.1:8010/index.html`. This mode serves regular files only
+and disables link following, directory indexes, archive fallback, and MCP.
+It accepts the exact loopback Host with the configured port. If a request
+includes an Origin, it must match the same HTTP origin. Requests without
+an Origin can still navigate to or fetch an allowed file.
+
 ## Features
 + Solves local SPA testing with no bulky web servers required.
 + Precompiled binaries ship for Windows, Linux, and macOS in `/bin` — no runtime install needed.
